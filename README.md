@@ -168,31 +168,171 @@ ghost-rat/
 - **Windows VM** (victim — isolated!)
 - **Linux machine** (attacker — or WSL)
 
-### Step 1: Create the Implant Bot
-1. Message **@BotFather** → `/newbot` → name it e.g. `GhostImplantBot`
-2. Copy the **Bot Token** → `BOT_TOKEN`
+---
 
-### Step 2: Create the Observer Bot (C2)
-1. Message **@BotFather** → `/newbot` → name it e.g. `GhostC2Bot`
-2. Copy the **Bot Token** → `C2_BOT_TOKEN`
+### Step 1: Create the Implant Bot (BOT_TOKEN)
 
-### Step 3: Create a Private Group
-1. Create a group, add **both bots**
-2. Send a message, visit `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates`
-3. Find `"chat": {"id": -100XXXXXXXXXX}` → `GROUP_CHAT_ID`
+1. Open Telegram and search for **@BotFather**
+2. Send the command: `/newbot`
+3. BotFather will ask for a **name** — type: `GhostImplantBot`
+4. BotFather will ask for a **username** — type: `ghost_implant_1234_bot` (must end in `bot`)
+5. BotFather will reply with a message like:
 
-### Step 4: Configure
-Edit `config.py`:
-```python
-BOT_TOKEN = "1234567890:ABCdef..."          # Implant bot
-C2_BOT_TOKEN = "0987654321:ZYXwvu..."       # Observer bot
-GROUP_CHAT_ID = "-100XXXXXXXXXX"
-EVASION_MODE = "report"                      # "exit", "report", or "disabled"
+   ```
+   Done! Congratulations on your new bot.
+   ...
+   Use this token to access the HTTP API:
+   7012345678:AAF1xxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+
+6. **Copy that token** — you'll need it for `BOT_TOKEN`
+
+---
+
+### Step 2: Create the Observer Bot (C2_BOT_TOKEN)
+
+1. In the **same @BotFather chat**, send `/newbot` again
+2. Name: `GhostC2Bot`
+3. Username: `ghost_c2_1234_bot`
+4. BotFather will reply with **another token**, e.g.:
+
+   ```
+   Use this token to access the HTTP API:
+   7198765432:BBG2yyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   ```
+
+5. **Copy that token** — you'll need it for `C2_BOT_TOKEN`
+
+> ⚠️ **Important**: You need TWO different bots. Do NOT use the same token for both.
+
+---
+
+### Step 3: Create a Private Group & Get GROUP_CHAT_ID
+
+1. In Telegram, tap **New Group**
+2. Name it anything (e.g. `Ghost Lab`)
+3. **Add BOTH bots** to the group:
+   - Search for `ghost_implant_1234_bot` → add it
+   - Search for `ghost_c2_1234_bot` → add it
+4. **Send any message** in the group (e.g. type `hello`)
+5. Now open your browser and visit this URL (replace with YOUR implant bot token):
+
+   ```
+   https://api.telegram.org/bot7012345678:AAF1xxxxxxxxxxxxxxxxxxxxxxxxxxx/getUpdates
+   ```
+
+6. In the JSON response, look for the `"chat"` object. You'll see something like:
+
+   ```json
+   "chat": {
+       "id": -1002345678901,
+       "title": "Ghost Lab",
+       "type": "supergroup"
+   }
+   ```
+
+7. **Copy the `id` value** (including the minus sign!) — that's your `GROUP_CHAT_ID`
+   - Example: `-1002345678901`
+
+> 💡 **Tip**: If the response is `{"ok":true,"result":[]}` (empty), send another message in the group and refresh the URL.
+
+---
+
+### Step 4: Paste Everything into config.py
+
+Open the file **`config.py`** (located in the project root folder):
+
+```
+ghost-rat/
+└── config.py   ← OPEN THIS FILE
 ```
 
+Find these 3 lines and replace the placeholder values:
+
+**Line 28** — Paste your **Implant Bot Token**:
+```python
+# BEFORE:
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+
+# AFTER (example):
+BOT_TOKEN = "7012345678:AAF1xxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+**Line 39** — Paste your **C2 Observer Bot Token**:
+```python
+# BEFORE:
+C2_BOT_TOKEN = "YOUR_C2_BOT_TOKEN_HERE"
+
+# AFTER (example):
+C2_BOT_TOKEN = "7198765432:BBG2yyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+```
+
+**Line 46** — Paste your **Group Chat ID**:
+```python
+# BEFORE:
+GROUP_CHAT_ID = "YOUR_GROUP_CHAT_ID_HERE"
+
+# AFTER (example):
+GROUP_CHAT_ID = "-1002345678901"
+```
+
+**Your completed config.py should look like this:**
+```python
+BOT_TOKEN = "7012345678:AAF1xxxxxxxxxxxxxxxxxxxxxxxxxxx"         # ← From Step 1
+C2_BOT_TOKEN = "7198765432:BBG2yyyyyyyyyyyyyyyyyyyyyyyyyyyy"     # ← From Step 2
+GROUP_CHAT_ID = "-1002345678901"                                  # ← From Step 3
+EVASION_MODE = "report"                                           # Keep as-is for lab testing
+```
+
+> 🔴 **Do NOT share your bot tokens publicly.** Anyone with the token can control the bot.
+
+---
+
 ### Step 5: Install Dependencies
+
+#### On Linux (Kali / Debian / Ubuntu) — USE A VIRTUAL ENVIRONMENT
+
+Modern Linux distros (Kali 2023+, Debian 12+, Ubuntu 23.04+) block `pip install` on the system Python to protect OS packages. You'll get this error if you try:
+
+```
+error: externally-managed-environment
+
+× This environment is externally managed
+```
+
+**Fix: Use a Python virtual environment (venv):**
+
+```bash
+# Navigate to the project folder
+cd ~/Desktop/ghost_rat
+
+# Create a virtual environment called 'venv'
+python3 -m venv venv
+
+# Activate it (your prompt will change to show '(venv)')
+source venv/bin/activate
+
+# Now pip works normally inside the venv
+pip install -r requirements.txt
+```
+
+> 💡 **Every time you open a new terminal**, you must re-activate the venv:
+> ```bash
+> cd ~/Desktop/ghost_rat
+> source venv/bin/activate
+> ```
+
+> 💡 To **deactivate** the venv when you're done: just type `deactivate`
+
+#### On Windows (Implant Build Machine)
+
 ```bash
 pip install -r requirements.txt
+```
+
+If you get a permissions error on Windows, use:
+```bash
+pip install --user -r requirements.txt
 ```
 
 ---
@@ -385,12 +525,21 @@ level: medium
 
 ## 🔧 Troubleshooting
 
+### Linux / Kali Issues
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `error: externally-managed-environment` | PEP 668 — Kali/Debian blocks pip on system Python | Use a virtual environment: `python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt` |
+| `python3 -m venv: command not found` | venv module not installed | `sudo apt install python3-venv` |
+| `pip: command not found` (inside venv) | pip not available | `sudo apt install python3-pip` then recreate venv |
+| `ModuleNotFoundError: No module named 'telegram'` | Forgot to activate venv | `source venv/bin/activate` before running `python3 c2_server.py` |
+| C2 server crashes on start | Wrong Python version | Check `python3 --version` — need 3.9+ |
+
 ### Config Errors
 | Error | Fix |
 |-------|-----|
-| `BOT_TOKEN not configured!` | Edit `config.py` with your implant bot token |
-| `C2_BOT_TOKEN not configured!` | Create a 2nd bot via @BotFather for C2 |
-| `GROUP_CHAT_ID not configured!` | Find chat ID via Telegram API |
+| `BOT_TOKEN not configured!` | Edit `config.py` line 28 with your implant bot token |
+| `C2_BOT_TOKEN not configured!` | Edit `config.py` line 39 — create a 2nd bot via @BotFather |
+| `GROUP_CHAT_ID not configured!` | Edit `config.py` line 46 — find chat ID via the Telegram API URL (see Step 3) |
 
 ### Implant Issues
 | Issue | Fix |
